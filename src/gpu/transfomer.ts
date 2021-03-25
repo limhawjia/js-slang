@@ -24,7 +24,7 @@ class GPUTransformer {
   // helps reference the main function
   globalIds: { __createKernelSource: es.Identifier }
 
-  ok: boolean
+  state: number
   outputArray: es.Identifier
   innerBody: any
   counters: string[]
@@ -51,9 +51,9 @@ class GPUTransformer {
       this.program,
       {
         ForStatement(node: es.ForStatement) {
-          const ok = gpuTranspile(node)
-          if (ok && node.loc) {
-            res.push([node.loc.start.line, 1])
+          const state = gpuTranspile(node)
+          if (state !== 0 && node.loc) {
+            res.push([node.loc.start.line, state])
           }
         }
       },
@@ -61,6 +61,7 @@ class GPUTransformer {
     )
     // tslint:enable
 
+    console.log('For loops transpiled')
     return res
   }
 
@@ -72,27 +73,29 @@ class GPUTransformer {
    * 4. Change assignment in body to a return statement
    * 5. Call __createKernelSource and assign it to our external variable
    */
-  gpuTranspile = (node: es.ForStatement) => {
+  gpuTranspile = (node: es.ForStatement): number => {
     // initialize our class variables
-    this.ok = true
+    console.log('Transpiling loop')
+    this.state = 0
     this.counters = []
     this.end = []
     this.members = []
 
     // 1. verification of outer loops + body
+    console.log('Checking outer loops')
     this.checkOuterLoops(node)
     // no gpu loops found
     if (this.counters.length === 0 || new Set(this.counters).size !== this.counters.length) {
-      this.ok = false
-      return
+      return this.state
     }
 
+    console.log('Checking body')
     const verifier = new GPUBodyVerifier(this.program, this.innerBody)
     if (!verifier.ok) {
-      this.ok = false
-      return
+      return this.state
     }
 
+    console.log('All checks passed, starting transpilation')
     this.outputArray = verifier.outputArray
     this.localVar = verifier.localVar
     this.members = verifier.members
@@ -112,6 +115,8 @@ class GPUTransformer {
         externEntries.push([create.literal(key), JSON.parse(JSON.stringify(val))])
       }
     }
+
+    console.log('External variables collated')
 
     // 4. Change assignment in body to a return statement
     const checker = verifier.getArrayName
@@ -137,19 +142,24 @@ class GPUTransformer {
       }
     })
 
+    console.log('Array assignment converted to return statement')
+
     // 5. If a counter is not used in array assignment, simply substituted with last value
     const counters = this.counters
+    const members = this.members
     const endMap = {}
     for (let i = 0; i < this.counters.length; i++) {
-      endMap[this.counters[i]] = this.end[i]
+      endMap[this.counters[i]] = (this.end[i] as es.Literal).value
     }
     simple(this.targetBody, {
       Identifier(nx: es.Identifier) {
-        if (counters.includes(nx.name) && !(nx.name in endMap)) {
-          create.mutateToLiteral(nx, endMap[nx.name])
+        if (counters.includes(nx.name) && !members.includes(nx.name)) {
+          create.mutateToLiteral(nx, endMap[nx.name] - 1)
         }
       }
     })
+
+    console.log('Unused counters substitued with last value')
 
     // 6. we need to keep the outer members
     let toParallelizeCount = 0
@@ -175,25 +185,31 @@ class GPUTransformer {
     const toKeepForStatements = []
     let currForLoop = node
     while (currForLoop.type === 'ForStatement') {
-      if (this.innerBody.type !== 'BlockStatement') {
+      if (currForLoop.body.type !== 'BlockStatement') {
         break
       }
-      if (this.innerBody.body.length > 1 || this.innerBody.body.length === 0) {
+      if (currForLoop.body.body.length > 1 || currForLoop.body.body.length === 0) {
         break
       }
 
       const counter = ((currForLoop.init as es.VariableDeclaration).declarations[0]
         .id as es.Identifier).name
-      if (!toKeepMembers.includes(counter)) {
+      console.log(counter)
+      if (toKeepMembers.includes(counter)) {
         toKeepForStatements.push(node)
+      } else {
+        this.state++
       }
 
-      currForLoop = this.innerBody.body[0]
+      currForLoop = currForLoop.body.body[0] as any
     }
 
     // 8. we transpile the loop to a function call, __createKernelSource
     const makeCreateKernelSourceCall = (arr: es.Identifier): es.CallExpression => {
-      const kernelFunction = create.blockArrowFunction([], this.targetBody)
+      const kernelFunction = create.blockArrowFunction(
+        counters.map(x => create.identifier(x)),
+        this.targetBody
+      )
       return create.callExpression(
         this.globalIds.__createKernelSource,
         [
@@ -213,7 +229,7 @@ class GPUTransformer {
     // 8. we construct our new node
     if (toKeepMembers.length === 0) {
       create.mutateToExpressionStatement(node, makeCreateKernelSourceCall(this.outputArray))
-      return this.ok
+      return this.state
     }
 
     let mem: es.MemberExpression | es.Identifier = this.outputArray
@@ -232,7 +248,7 @@ class GPUTransformer {
     const f = toKeepForStatements[0]
     create.mutateToForStatement(node, f.init, f.test, f.update, body)
 
-    return this.ok
+    return this.state
   }
 
   // verification of outer loops using our verifier
@@ -278,7 +294,7 @@ class GPUTransformer {
    * }
    */
   getTargetBody(node: es.ForStatement) {
-    let mv = this.state
+    let mv = this.counters.length
     this.targetBody = node
     while (mv > 1) {
       this.targetBody = this.targetBody.body.body[0]

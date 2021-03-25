@@ -11,6 +11,7 @@ const MAX_SIZE = 200
 
 // helper function to build array output, modifies and returns res
 function buildArray(arr: any, ctr: any, end: any, mem: any, ext: any, res: any) {
+  console.log('Building array')
   const endMap = {}
   for (let i = 0; i < ctr.length; i++) {
     endMap[ctr[i]] = end[i]
@@ -23,17 +24,19 @@ function buildArray(arr: any, ctr: any, end: any, mem: any, ext: any, res: any) 
   const cur = mem[0]
   if (typeof cur === 'string' && ctr.includes(cur)) {
     for (let i = 0; i < endMap[cur]; i++) {
-      res[i] = buildArray(arr[i], ctr, end, mem, ext, res[i])
+      res[i] = buildArray(arr[i], ctr, end, mem.slice(1), ext, res[i])
     }
   } else if (typeof cur === 'string' && cur in ext) {
     const v = ext[cur]
-    res[v] = buildArray(arr[v], ctr, end, mem, ext, res[v])
+    res[v] = buildArray(arr[v], ctr, end, mem.slice(1), ext, res[v])
   } else if (typeof cur === 'number') {
-    res[cur] = buildArray(arr, ctr, end, mem, ext, res[cur])
+    res[cur] = buildArray(arr, ctr, end, mem.slice(1), ext, res[cur])
   } else {
     // TODO: handle this properly
     throw 'Index is not number, counter or external variable'
   }
+
+  console.log(res)
 
   return res
 }
@@ -64,38 +67,38 @@ function checkValidGPU(f: any, end: any): boolean {
 }
 
 // just run on js!
-function manualRun(f: any, end: any, res: any) {
-  function build() {
-    for (let i = 0; i < end[0]; i++) {
-      res[i] = f(i)
-    }
-    return
-  }
+// function manualRun(f: any, end: any, res: any) {
+//   function build() {
+//     for (let i = 0; i < end[0]; i++) {
+//       res[i] = f(i)
+//     }
+//     return
+//   }
 
-  function build2D() {
-    for (let i = 0; i < end[0]; i = i + 1) {
-      for (let j = 0; j < end[1]; j = j + 1) {
-        res[i][j] = f(i, j)
-      }
-    }
-    return
-  }
+//   function build2D() {
+//     for (let i = 0; i < end[0]; i = i + 1) {
+//       for (let j = 0; j < end[1]; j = j + 1) {
+//         res[i][j] = f(i, j)
+//       }
+//     }
+//     return
+//   }
 
-  function build3D() {
-    for (let i = 0; i < end[0]; i = i + 1) {
-      for (let j = 0; j < end[1]; j = j + 1) {
-        for (let k = 0; k < end[2]; k = k + 1) {
-          res[i][j][k] = f(i, j, k)
-        }
-      }
-    }
-    return
-  }
+//   function build3D() {
+//     for (let i = 0; i < end[0]; i = i + 1) {
+//       for (let j = 0; j < end[1]; j = j + 1) {
+//         for (let k = 0; k < end[2]; k = k + 1) {
+//           res[i][j][k] = f(i, j, k)
+//         }
+//       }
+//     }
+//     return
+//   }
 
-  if (end.length === 1) return build()
-  if (end.length === 2) return build2D()
-  return build3D()
-}
+//   if (end.length === 1) return build()
+//   if (end.length === 2) return build2D()
+//   return build3D()
+// }
 
 // helper function to calculate setOutput array
 function getRuntimeDim(ctr: any, end: any, mem: any) {
@@ -116,6 +119,7 @@ function getRuntimeDim(ctr: any, end: any, mem: any) {
 
 // helper function to check dimensions of array
 function checkArr(arr: any, ctr: any, end: any, mem: any, ext: any) {
+  console.log('Checking array')
   const endMap = {}
   for (let i = 0; i < ctr.length; i++) {
     endMap[ctr[i]] = end[i]
@@ -124,12 +128,14 @@ function checkArr(arr: any, ctr: any, end: any, mem: any, ext: any) {
   let ok = true
   let arrQ = [arr]
 
-  for (let m of mem) {
+  for (let i = 0; i < mem.length - 1; i++) {
+    const m = mem[i]
+    console.log(m)
     if (typeof m === 'number') {
-      // current level of arrays need to be of at least length m + 1
+      // current level of arrays need to be of at least length m
       const newArrQ = []
       for (let a of arrQ) {
-        if (!Array.isArray(a) || a.length <= m) {
+        if (!Array.isArray(a) || a.length < m) {
           ok = false
           break
         }
@@ -137,14 +143,14 @@ function checkArr(arr: any, ctr: any, end: any, mem: any, ext: any) {
       }
       arrQ = newArrQ
     } else if (ctr.includes(m)) {
-      // current level of arrays need to be at least length endMap[m] + 1
+      // current level of arrays need to be at least length endMap[m]
       const newArrQ = []
       for (let a of arrQ) {
-        if (!Array.isArray(a) || a.length <= endMap[m]) {
+        if (!Array.isArray(a) || a.length < endMap[m]) {
           ok = false
           break
         }
-        for (let i = 0; i <= endMap[m]; i++) {
+        for (let i = 0; i < endMap[m]; i++) {
           newArrQ.push(a[i])
         }
       }
@@ -173,6 +179,14 @@ function checkArr(arr: any, ctr: any, end: any, mem: any, ext: any) {
     }
   }
 
+  for (let a of arrQ) {
+    console.log('Checking last level')
+    if (!Array.isArray(a)) {
+      ok = false
+      break
+    }
+  }
+
   return ok
 }
 
@@ -193,25 +207,35 @@ export function __createKernel(
   arr: any,
   f2: any
 ) {
+  console.log('In __createKernel')
   const gpu = new GPU()
 
   if (!checkArr(arr, ctr, end, mem, extern)) {
+    console.log('Array check failed')
     throw new TypeError(arr, '', 'object or array', typeof arr)
   }
+  console.log('Array check passed')
 
-  // if (!checkValidGPU(f2, end)) {
-  //   manualRun(f2, end, arr)
-  //   return
-  // }
+  if (!checkValidGPU(f2, end)) {
+    console.log('Manual run')
+    // manualRun(f2, end, arr)
+    // return
+    console.log('Skip manual run for now')
+  }
 
   const dimensions = getRuntimeDim(ctr, end, mem)
+  console.log(dimensions)
 
   // external variables to be in the GPU
   const out = { constants: {} }
   out.constants = extern
 
   const gpuFunction = gpu.createKernel(f, out).setOutput(dimensions)
+  console.log(f)
   const res = gpuFunction() as any
+  console.log('GPU.js called')
+  console.log(res)
+  console.log(arr)
   buildArray(res, ctr, end, mem, extern, arr)
 }
 
@@ -238,6 +262,7 @@ export function __createKernelSource(
   f: any,
   kernelId: number
 ) {
+  console.log('In __createKernelSource')
   const extern = entriesToObject(externSource)
 
   const memoizedf = kernels.get(kernelId)

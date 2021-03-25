@@ -65,6 +65,8 @@ class GPUBodyVerifier {
       return
     }
 
+    console.log('No illegal statements')
+
     // 2. check function calls are only to math_*
     const mathFuncCheck = new RegExp(/^math_[a-z]+$/)
     simple(node, {
@@ -86,6 +88,8 @@ class GPUBodyVerifier {
       this.ok = false
       return
     }
+
+    console.log('Only math function calls')
 
     // 3. check there is only ONE assignment to a global result variable
 
@@ -135,8 +139,11 @@ class GPUBodyVerifier {
       return
     }
 
+    console.log('Only 1 assignment to external array')
+
     // check res assignment and its counters
     this.members = this.getPropertyAccess(resultExpr[0].left)
+    console.log(this.members)
     if (this.members.length === 0) {
       this.ok = false
       return
@@ -145,6 +152,7 @@ class GPUBodyVerifier {
     // check result variable is not used anywhere with wrong indices
     const getProp = this.getPropertyAccess
     const resArr = this.outputArray
+    const members = this.members
     simple(
       node,
       {
@@ -156,7 +164,7 @@ class GPUBodyVerifier {
 
           // get indices
           const indices = getProp(nx)
-          if (JSON.stringify(indices) === JSON.stringify(this.members)) {
+          if (JSON.stringify(indices) === JSON.stringify(members)) {
             return
           }
 
@@ -171,6 +179,7 @@ class GPUBodyVerifier {
       this.ok = false
       return
     }
+    console.log('Result not used with wrong indices')
   }
 
   getArrayName = (node: es.MemberExpression): es.Identifier => {
@@ -189,7 +198,7 @@ class GPUBodyVerifier {
     while (curr.type === 'MemberExpression') {
       if (curr.property.type === 'Literal' && typeof curr.property.type.value === 'number') {
         res.push(curr.property.value)
-      } else if (curr.property.type === 'Identifier' && curr.property.name in this.localVar) {
+      } else if (curr.property.type === 'Identifier' && !(curr.property.name in this.localVar)) {
         res.push(curr.property.name)
       } else {
         return []

@@ -31,6 +31,8 @@ export function transpileToGPU(program: es.Program) {
   const transformer = new GPUTransformer(program, create.identifier('__createKernelSource'))
   const res = transformer.transform()
 
+  console.log('Transformed')
+
   const gpuDisplayStatements = []
   // add some display statements to program
   if (res.length > 0) {
@@ -50,6 +52,8 @@ export function transpileToGPU(program: es.Program) {
     }
   }
 
+  console.log('Display statements added')
+
   const clearKernelCacheStatement = create.expressionStatement(
     create.callExpression(create.identifier('__clearKernelCache'), [], {
       start: { line: 0, column: 0 },
@@ -57,5 +61,6 @@ export function transpileToGPU(program: es.Program) {
     })
   )
 
+  console.log(program.body)
   program.body = [...gpuDisplayStatements, clearKernelCacheStatement, ...program.body]
 }
