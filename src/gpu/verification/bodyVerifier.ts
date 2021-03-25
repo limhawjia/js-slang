@@ -13,9 +13,9 @@ class GPUBodyVerifier {
   program: es.Program
   node: es.Statement
 
-  state: number
+  ok: boolean
   localVar: Set<string>
-  counters: string[]
+  members: (string | number)[]
   outputArray: es.Identifier
 
   /**
@@ -23,11 +23,11 @@ class GPUBodyVerifier {
    * @param node body to be verified
    * @param counters list of for loop counters (to check array assignment)
    */
-  constructor(program: es.Program, node: es.Statement, counters: string[]) {
+  constructor(program: es.Program, node: es.Statement) {
     this.program = program
     this.node = node
-    this.counters = counters
-    this.state = 0
+    this.members = []
+    this.ok = true
     this.checkBody(node)
   }
 
@@ -61,6 +61,7 @@ class GPUBodyVerifier {
     })
 
     if (!ok) {
+      this.ok = false
       return
     }
 
@@ -82,6 +83,7 @@ class GPUBodyVerifier {
     })
 
     if (!ok) {
+      this.ok = false
       return
     }
 
@@ -121,6 +123,7 @@ class GPUBodyVerifier {
 
     // too many assignments!
     if (resultExpr.length !== 1) {
+      this.ok = false
       return
     }
 
@@ -128,12 +131,14 @@ class GPUBodyVerifier {
 
     // not assigning to array
     if (resultExpr[0].left.type !== 'MemberExpression') {
+      this.ok = false
       return
     }
 
     // check res assignment and its counters
-    const res = this.getPropertyAccess(resultExpr[0].left)
-    if (res.length === 0 || res.length > this.counters.length) {
+    this.members = this.getPropertyAccess(resultExpr[0].left)
+    if (this.members.length === 0) {
+      this.ok = false
       return
     }
 
@@ -151,7 +156,7 @@ class GPUBodyVerifier {
 
           // get indices
           const indices = getProp(nx)
-          if (JSON.stringify(indices) === JSON.stringify(res)) {
+          if (JSON.stringify(indices) === JSON.stringify(this.members)) {
             return
           }
 
@@ -163,16 +168,9 @@ class GPUBodyVerifier {
     )
 
     if (!ok) {
+      this.ok = false
       return
     }
-
-    for (let i = 0; i < this.counters.length; i++) {
-      if (res[i] !== this.counters[i]) break
-      this.state++
-    }
-
-    // we only can have upto 3 states
-    if (this.state > 3) this.state = 3
   }
 
   getArrayName = (node: es.MemberExpression): es.Identifier => {
@@ -185,22 +183,18 @@ class GPUBodyVerifier {
 
   // helper function that helps to get indices accessed from array
   // e.g. returns i, j for res[i][j]
-  getPropertyAccess = (node: es.MemberExpression): string[] => {
+  getPropertyAccess = (node: es.MemberExpression): (string | number)[] => {
     const res: string[] = []
-    let ok: boolean = true
     let curr: any = node
     while (curr.type === 'MemberExpression') {
-      if (curr.property.type !== 'Identifier') {
-        ok = false
-        break
+      if (curr.property.type === 'Literal' && typeof curr.property.type.value === 'number') {
+        res.push(curr.property.type.value)
+      } else if (curr.property.type === 'Identifier' && curr.property.name in this.localVar) {
+        res.push(curr.property.name)
+      } else {
+        return []
       }
-
-      res.push(curr.property.name)
       curr = curr.object
-    }
-
-    if (!ok) {
-      return []
     }
 
     this.outputArray = curr

@@ -24,11 +24,12 @@ class GPUTransformer {
   // helps reference the main function
   globalIds: { __createKernelSource: es.Identifier }
 
+  ok: boolean
   outputArray: es.Identifier
   innerBody: any
   counters: string[]
   end: es.Expression[]
-  state: number
+  members: (string | number)[]
   localVar: Set<string>
   outerVariables: any
   targetBody: any
@@ -71,27 +72,30 @@ class GPUTransformer {
    * 4. Change assignment in body to a return statement
    * 5. Call __createKernelSource and assign it to our external variable
    */
-  gpuTranspile = (node: es.ForStatement): number => {
+  gpuTranspile = (node: es.ForStatement) => {
     // initialize our class variables
-    this.state = 0
+    this.ok = true
     this.counters = []
     this.end = []
+    this.members = []
 
     // 1. verification of outer loops + body
     this.checkOuterLoops(node)
     // no gpu loops found
     if (this.counters.length === 0 || new Set(this.counters).size !== this.counters.length) {
-      return 0
+      this.ok = false
+      return
     }
 
-    const verifier = new GPUBodyVerifier(this.program, this.innerBody, this.counters)
-    if (verifier.state === 0) {
-      return 0
+    const verifier = new GPUBodyVerifier(this.program, this.innerBody)
+    if (!verifier.ok) {
+      this.ok = false
+      return
     }
 
-    this.state = verifier.state
     this.outputArray = verifier.outputArray
     this.localVar = verifier.localVar
+    this.members = verifier.members
 
     // 2. get external variables + the main body
     this.getOuterVariables()
