@@ -44,30 +44,6 @@ function prettyOutput(arr: any): any {
   return Array.from(res)
 }
 
-// helper function to check array is initialized
-function checkArray(arr: any): boolean {
-  return Array.isArray(arr)
-}
-
-// helper function to check 2D array is initialized
-function checkArray2D(arr: any, end: any): boolean {
-  for (let i = 0; i < end[0]; i = i + 1) {
-    if (!Array.isArray(arr[i])) return false
-  }
-  return true
-}
-
-// helper function to check 3D array is initialized
-function checkArray3D(arr: any, end: any): boolean {
-  for (let i = 0; i < end[0]; i = i + 1) {
-    if (!Array.isArray(arr[i])) return false
-    for (let j = 0; j < end[1]; j = j + 1) {
-      if (!Array.isArray(arr[i][j])) return false
-    }
-  }
-  return true
-}
-
 /*
  * we only use the gpu if:
  * 1. we are working with numbers
@@ -127,58 +103,130 @@ function manualRun(f: any, end: any, res: any) {
   return build3D()
 }
 
+// helper function to build id map for runtime transpile
+function buildRuntimeMap(mem: any) {
+  const ids = []
+  for (let m of mem) {
+    if (typeof m === 'string') {
+      ids.push(m)
+    }
+  }
+
+  if (ids.length > 3) {
+    // TODO: handle this properly
+    throw 'Identifiers in array indices should not exceed 3'
+  }
+
+  const t = [
+    ['this.thread.x'],
+    ['this.thread.y', 'this.thread.x'],
+    ['this.thread.z', 'this.thread.y', 'this.thread.x']
+  ]
+  const threads = t[ids.length]
+
+  const idMap = {}
+  for (let i = 0; i < ids.length; i++) {
+    idMap[ids[i]] = threads[i]
+  }
+
+  return idMap
+}
+
+// helper function to calculate setOutput array
+function getRuntimeDim(ctr: any, end: any, mem: any) {
+  const endMap = {}
+  for (let i = 0; i < ctr.length; i++) {
+    endMap[ctr[i]] = end[i]
+  }
+
+  const dimensions = []
+  for (let m of mem) {
+    if (typeof m === 'string') {
+      dimensions.push(endMap[m])
+    }
+  }
+
+  return dimensions
+}
+
+// helper function to check dimensions of array
+function checkArr(arr: any[], ctr: any, end: any, mem: any) {
+  const endMap = {}
+  for (let i = 0; i < ctr.length; i++) {
+    endMap[ctr[i]] = end[i]
+  }
+
+  let ok = true
+  let arrQ = [arr]
+
+  for (let m of mem) {
+    if (typeof m === 'number') {
+      // current level of arrays need to be of at least length m + 1
+      const newArrQ = []
+      for (let a of arrQ) {
+        if (!Array.isArray(a) || a.length <= m) {
+          ok = false
+          break
+        }
+        newArrQ.push(a[m])
+      }
+      arrQ = newArrQ
+    } else {
+      // current level of arrays need to be at least length endMap[m] + 1
+      const newArrQ = []
+      for (let a of arrQ) {
+        if (!Array.isArray(a) || a.length <= endMap[m]) {
+          ok = false
+          break
+        }
+        for (let i = 0; i <= endMap[m]; i++) {
+          newArrQ.push(a[i])
+        }
+      }
+      arrQ = newArrQ
+    }
+    if (!ok) {
+      break
+    }
+  }
+
+  return ok
+}
+
 /* main function that runs code on the GPU (using gpu.js library)
- * @end : end bounds for array
+ * @ctr: names of counters
+ * @end : end bounds for counters
+ * @mem: names/value of indices used in array assiginment
  * @extern : external variable definitions {}
  * @f : function run as on GPU threads
  * @arr : array to be written to
  */
-export function __createKernel(end: any, extern: any, f: any, arr: any, f2: any) {
+export function __createKernel(
+  ctr: any,
+  end: any,
+  mem: any,
+  extern: any,
+  f: any,
+  arr: any,
+  f2: any
+) {
   const gpu = new GPU()
 
-  // check array is initialized properly
-  let ok = checkArray(arr)
-  let err = ''
-  if (!ok) {
-    err = typeof arr
+  if (!checkArr(arr, ctr, end, mem)) {
+    throw new TypeError(arr, '', 'object or array', typeof arr)
   }
-
-  // TODO: find a cleaner way to do this
-  if (end.length > 1) {
-    ok = ok && checkArray2D(arr, end)
-    if (!ok) {
-      err = 'undefined'
-    }
-  }
-
-  if (end.length > 2) {
-    ok = ok && checkArray3D(arr, end)
-    if (!ok) {
-      err = 'undefined'
-    }
-  }
-
-  if (!ok) {
-    throw new TypeError(arr, '', 'object or array', err)
-  }
-
-  // check if program is valid to run on GPU
-  ok = checkValidGPU(f2, end)
-  if (!ok) {
+  if (!checkValidGPU(f2, end)) {
     manualRun(f2, end, arr)
     return
   }
 
-  const nend = []
-  for (let i = end.length - 1; i >= 0; i--) {
-    nend.push(end[i])
-  }
+  const dimensions = getRuntimeDim(ctr, end, mem)
 
   // external variables to be in the GPU
   const out = { constants: {} }
   out.constants = extern
 
-  const gpuFunction = gpu.createKernel(f, out).setOutput(nend)
+  const gpuFunction = gpu.createKernel(f, out).setOutput(dimensions)
   const res = gpuFunction() as any
   if (end.length === 1) buildArray(res, end, arr)
   if (end.length === 2) build2DArray(res, end, arr)
