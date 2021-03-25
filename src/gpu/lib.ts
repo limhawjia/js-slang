@@ -9,39 +9,33 @@ import { ACORN_PARSE_OPTIONS } from '../constants'
 // Heuristic : Only use GPU if array is bigger than this
 const MAX_SIZE = 200
 
-// helper function to build 2D array output
-function buildArray(arr: Float32Array[][], end: any, res: any) {
-  for (let i = 0; i < end[0]; i++) {
-    res[i] = prettyOutput(arr[i])
+// helper function to build 2D array output, modifies and returns res
+function buildArray(arr: any, ctr: any, end: any, mem: any, ext: any, res: any) {
+  const endMap = {}
+  for (let i = 0; i < ctr.length; i++) {
+    endMap[ctr[i]] = end[i]
   }
-}
 
-function build2DArray(arr: Float32Array[][], end: any, res: any) {
-  for (let i = 0; i < end[0]; i++) {
-    for (let j = 0; j < end[1]; j++) {
-      res[i][j] = prettyOutput(arr[i][j])
-    }
-  }
-}
-
-// helper function to build 3D array output
-function build3DArray(arr: Float32Array[][][], end: any, res: any) {
-  for (let i = 0; i < end[0]; i++) {
-    for (let j = 0; j < end[1]; j++) {
-      for (let k = 0; k < end[2]; k++) {
-        res[i][j][k] = prettyOutput(arr[i][j][k])
-      }
-    }
-  }
-}
-
-function prettyOutput(arr: any): any {
-  if (!(arr instanceof Float32Array)) {
+  if (mem.length == 0) {
     return arr
   }
 
-  const res = arr.map(x => prettyOutput(x))
-  return Array.from(res)
+  const cur = mem[0]
+  if (typeof cur === 'string' && ctr.includes(cur)) {
+    for (let i = 0; i < endMap[cur]; i++) {
+      res[i] = buildArray(arr[i], ctr, end, mem, ext, res[i])
+    }
+  } else if (typeof cur === 'string' && cur in ext) {
+    const v = ext[cur]
+    res[v] = buildArray(arr[v], ctr, end, mem, ext, res[v])
+  } else if (typeof cur === 'number') {
+    res[cur] = buildArray(arr, ctr, end, mem, ext, res[cur])
+  } else {
+    // TODO: handle this properly
+    throw 'Index is not number, counter or external variable'
+  }
+
+  return res
 }
 
 /*
@@ -104,10 +98,10 @@ function manualRun(f: any, end: any, res: any) {
 }
 
 // helper function to build id map for runtime transpile
-function buildRuntimeMap(mem: any) {
+function buildRuntimeMap(ctr: any, mem: any) {
   const ids = []
   for (let m of mem) {
-    if (typeof m === 'string') {
+    if (typeof m === 'string' && ctr.includes(m)) {
       ids.push(m)
     }
   }
@@ -141,7 +135,7 @@ function getRuntimeDim(ctr: any, end: any, mem: any) {
 
   const dimensions = []
   for (let m of mem) {
-    if (typeof m === 'string') {
+    if (typeof m === 'string' && m in endMap) {
       dimensions.push(endMap[m])
     }
   }
@@ -150,7 +144,7 @@ function getRuntimeDim(ctr: any, end: any, mem: any) {
 }
 
 // helper function to check dimensions of array
-function checkArr(arr: any[], ctr: any, end: any, mem: any) {
+function checkArr(arr: any, ctr: any, end: any, mem: any, ext: any) {
   const endMap = {}
   for (let i = 0; i < ctr.length; i++) {
     endMap[ctr[i]] = end[i]
@@ -171,7 +165,7 @@ function checkArr(arr: any[], ctr: any, end: any, mem: any) {
         newArrQ.push(a[m])
       }
       arrQ = newArrQ
-    } else {
+    } else if (ctr.includes(m)) {
       // current level of arrays need to be at least length endMap[m] + 1
       const newArrQ = []
       for (let a of arrQ) {
@@ -184,6 +178,24 @@ function checkArr(arr: any[], ctr: any, end: any, mem: any) {
         }
       }
       arrQ = newArrQ
+    } else if (m in ext) {
+      const v = ext[m]
+      if (typeof v !== 'number') {
+        // TODO: handle this properyl
+        throw 'External variable used as index is not a number'
+      }
+      const newArrQ = []
+      for (let a of arrQ) {
+        if (!Array.isArray(a) || a.length <= v) {
+          ok = false
+          break
+        }
+        newArrQ.push(a[v])
+      }
+      arrQ = newArrQ
+    } else {
+      // TODO: handle this properly
+      throw 'Index should not be a local variable'
     }
     if (!ok) {
       break
@@ -212,7 +224,7 @@ export function __createKernel(
 ) {
   const gpu = new GPU()
 
-  if (!checkArr(arr, ctr, end, mem)) {
+  if (!checkArr(arr, ctr, end, mem, extern)) {
     throw new TypeError(arr, '', 'object or array', typeof arr)
   }
   if (!checkValidGPU(f2, end)) {
@@ -228,9 +240,7 @@ export function __createKernel(
 
   const gpuFunction = gpu.createKernel(f, out).setOutput(dimensions)
   const res = gpuFunction() as any
-  if (end.length === 1) buildArray(res, end, arr)
-  if (end.length === 2) build2DArray(res, end, arr)
-  if (end.length === 3) build3DArray(res, end, arr)
+  buildArray(res, ctr, end, mem, extern, arr)
 }
 
 function entriesToObject(entries: [string, any][]): any {
