@@ -9,7 +9,7 @@ import { ACORN_PARSE_OPTIONS } from '../constants'
 // Heuristic : Only use GPU if array is bigger than this
 const MAX_SIZE = 200
 
-// helper function to build 2D array output, modifies and returns res
+// helper function to build array output, modifies and returns res
 function buildArray(arr: any, ctr: any, end: any, mem: any, ext: any, res: any) {
   const endMap = {}
   for (let i = 0; i < ctr.length; i++) {
@@ -95,35 +95,6 @@ function manualRun(f: any, end: any, res: any) {
   if (end.length === 1) return build()
   if (end.length === 2) return build2D()
   return build3D()
-}
-
-// helper function to build id map for runtime transpile
-function buildRuntimeMap(ctr: any, mem: any) {
-  const ids = []
-  for (let m of mem) {
-    if (typeof m === 'string' && ctr.includes(m)) {
-      ids.push(m)
-    }
-  }
-
-  if (ids.length > 3) {
-    // TODO: handle this properly
-    throw 'Identifiers in array indices should not exceed 3'
-  }
-
-  const t = [
-    ['this.thread.x'],
-    ['this.thread.y', 'this.thread.x'],
-    ['this.thread.z', 'this.thread.y', 'this.thread.x']
-  ]
-  const threads = t[ids.length]
-
-  const idMap = {}
-  for (let i = 0; i < ids.length; i++) {
-    idMap[ids[i]] = threads[i]
-  }
-
-  return idMap
 }
 
 // helper function to calculate setOutput array
@@ -227,10 +198,11 @@ export function __createKernel(
   if (!checkArr(arr, ctr, end, mem, extern)) {
     throw new TypeError(arr, '', 'object or array', typeof arr)
   }
-  if (!checkValidGPU(f2, end)) {
-    manualRun(f2, end, arr)
-    return
-  }
+
+  // if (!checkValidGPU(f2, end)) {
+  //   manualRun(f2, end, arr)
+  //   return
+  // }
 
   const dimensions = getRuntimeDim(ctr, end, mem)
 
@@ -257,7 +229,9 @@ export function __clearKernelCache() {
 }
 
 export function __createKernelSource(
+  ctr: string[],
   end: number[],
+  mem: (string | number)[],
   externSource: [string, any][],
   localNames: string[],
   arr: any,
@@ -268,17 +242,17 @@ export function __createKernelSource(
 
   const memoizedf = kernels.get(kernelId)
   if (memoizedf !== undefined) {
-    return __createKernel(end, extern, memoizedf, arr, f)
+    return __createKernel(ctr, end, mem, extern, memoizedf, arr, f)
   }
 
   const code = f.toString()
   // We don't need the full source parser here because it's already validated at transpile time.
   const ast = (parse(code, ACORN_PARSE_OPTIONS) as unknown) as es.Program
   const body = (ast.body[0] as es.ExpressionStatement).expression as es.ArrowFunctionExpression
-  const newBody = gpuRuntimeTranspile(body, new Set(localNames))
+  const newBody = gpuRuntimeTranspile(body, new Set(localNames), ctr, mem)
   const kernel = new Function(generate(newBody))
 
   kernels.set(kernelId, kernel)
 
-  return __createKernel(end, extern, kernel, arr, f)
+  return __createKernel(ctr, end, mem, extern, kernel, arr, f)
 }

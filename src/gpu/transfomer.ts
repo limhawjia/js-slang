@@ -242,6 +242,30 @@ class GPUTransformer {
   }
 }
 
+function buildRuntimeMap(ctr: any, mem: any) {
+  const ids = []
+  for (let m of mem) {
+    if (typeof m === 'string' && ctr.includes(m)) {
+      ids.push(m)
+    }
+  }
+
+  if (ids.length > 3) {
+    // TODO: handle this properly
+    throw 'Identifiers in array indices should not exceed 3'
+  }
+
+  const t = [['x'], ['y', 'x'], ['z', 'y', 'x']]
+  const threads = t[ids.length - 1]
+
+  const idMap = {}
+  for (let i = 0; i < ids.length; i++) {
+    idMap[ids[i]] = threads[i]
+  }
+
+  return idMap
+}
+
 /*
  * Here we transpile a source-syntax kernel function to a gpu.js kernel function
  * 0. No need for validity checks, as that is done at compile time in gpuTranspile
@@ -251,11 +275,10 @@ class GPUTransformer {
  */
 export function gpuRuntimeTranspile(
   node: es.ArrowFunctionExpression,
-  localNames: Set<string>
+  localNames: Set<string>,
+  ctr: string[],
+  mem: any[]
 ): es.BlockStatement {
-  // Contains counters
-  const params = (node.params as es.Identifier[]).map(v => v.name)
-
   // body here is the loop body transformed into a function of the indices.
   // We need to finish the transformation to a gpu.js kernel function by renaming stuff.
   const body = node.body as es.BlockStatement
@@ -283,7 +306,7 @@ export function gpuRuntimeTranspile(
   // e.g. let res = 1 + y; where y is an external variable
   // becomes let res = 1 + this.constants.y;
 
-  const ignoredNames: Set<string> = new Set([...params, 'Math'])
+  const ignoredNames: Set<string> = new Set([...mem.filter(x => typeof x === 'string'), 'Math'])
   simple(body, {
     Identifier(nx: es.Identifier) {
       // ignore these names
@@ -303,28 +326,15 @@ export function gpuRuntimeTranspile(
   // e.g. let res = 1 + i; where i is a counter
   // becomes let res = 1 + this.thread.x;
 
-  // depending on state the mappings will change
-  let threads = ['x']
-  if (params.length === 2) threads = ['y', 'x']
-  if (params.length === 3) threads = ['z', 'y', 'x']
-
-  const counters: string[] = params.slice()
+  const idMap = buildRuntimeMap(ctr, mem)
 
   simple(body, {
     Identifier(nx: es.Identifier) {
-      let x = -1
-      for (let i = 0; i < counters.length; i = i + 1) {
-        if (nx.name === counters[i]) {
-          x = i
-          break
-        }
-      }
-
-      if (x === -1) {
+      if (!(nx.name in idMap)) {
         return
       }
 
-      const id = threads[x]
+      const id = idMap[nx.name]
       create.mutateToMemberExpression(
         nx,
         create.memberExpression(create.identifier('this'), 'thread'),
