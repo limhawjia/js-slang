@@ -188,7 +188,7 @@ class GPUBodyVerifier {
     let curr: any = node
     while (curr.type === 'MemberExpression') {
       if (curr.property.type === 'Literal' && typeof curr.property.type.value === 'number') {
-        res.push(curr.property.type.value)
+        res.push(curr.property.value)
       } else if (curr.property.type === 'Identifier' && curr.property.name in this.localVar) {
         res.push(curr.property.name)
       } else {

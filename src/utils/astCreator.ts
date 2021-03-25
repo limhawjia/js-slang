@@ -147,6 +147,40 @@ export const mutateToCallExpression = (
   node.arguments = args
 }
 
+export const mutateToLiteral = (node: es.Node, value: any) => {
+  node.type = 'Literal'
+  node = node as es.Literal
+  node.value = value
+}
+
+export const mutateToForStatement = (
+  node: es.Node,
+  init: es.VariableDeclaration | es.Expression | null | undefined,
+  test: es.Expression | null | undefined,
+  update: es.Expression | null | undefined,
+  body: es.BlockStatement
+) => {
+  node.type = 'ForStatement'
+  node = node as es.ForStatement
+  node.init = init
+  node.test = test
+  node.update = update
+  node.body = body
+}
+
+export const ForStatement = (
+  init: es.VariableDeclaration | es.Expression | null | undefined,
+  test: es.Expression | null | undefined,
+  update: es.Expression | null | undefined,
+  body: es.BlockStatement
+): es.ForStatement => ({
+  type: 'ForStatement',
+  init: init,
+  test: test,
+  update: update,
+  body: body
+})
+
 export const mutateToAssignmentExpression = (
   node: es.Node,
   left: es.Pattern,

@@ -51,9 +51,9 @@ class GPUTransformer {
       this.program,
       {
         ForStatement(node: es.ForStatement) {
-          const state = gpuTranspile(node)
-          if (state > 0 && node.loc) {
-            res.push([node.loc.start.line, state])
+          const ok = gpuTranspile(node)
+          if (ok && node.loc) {
+            res.push([node.loc.start.line, 1])
           }
         }
       },
@@ -137,33 +137,102 @@ class GPUTransformer {
       }
     })
 
-    // deep copy here (for runtime checks)
-    const params: es.Identifier[] = []
-    for (let i = 0; i < this.state; i++) {
-      params.push(create.identifier(this.counters[i]))
+    // 5. If a counter is not used in array assignment, simply substituted with last value
+    const counters = this.counters
+    const endMap = {}
+    for (let i = 0; i < this.counters.length; i++) {
+      endMap[this.counters[i]] = this.end[i]
+    }
+    simple(this.targetBody, {
+      Identifier(nx: es.Identifier) {
+        if (counters.includes(nx.name) && !(nx.name in endMap)) {
+          create.mutateToLiteral(nx, endMap[nx.name])
+        }
+      }
+    })
+
+    // 6. we need to keep the outer members
+    let toParallelizeCount = 0
+    let memCount = 0
+    const toParallelizeMembers: (string | number)[] = []
+    for (let i = this.members.length - 1; i >= 0; i--) {
+      if (memCount >= 3) {
+        break
+      }
+      const m = this.members[i]
+      if (typeof m === 'string' && this.counters.includes(m)) {
+        memCount++
+      }
+      toParallelizeMembers.push(m)
+      toParallelizeCount++
+    }
+    const toKeepMembers = []
+    for (let i = 0; i < this.members.length - toParallelizeCount; i++) {
+      toKeepMembers.push(this.members[i])
     }
 
-    // 5. we transpile the loop to a function call, __createKernelSource
-    const kernelFunction = create.blockArrowFunction(
-      this.counters.map(name => create.identifier(name)),
-      this.targetBody
-    )
-    const createKernelSourceCall = create.callExpression(
-      this.globalIds.__createKernelSource,
-      [
-        create.arrayExpression(this.end),
-        create.arrayExpression(externEntries.map(create.arrayExpression)),
-        create.arrayExpression(Array.from(locals.values()).map(v => create.literal(v))),
-        this.outputArray,
-        kernelFunction,
-        create.literal(currentKernelId++)
-      ],
-      node.loc!
-    )
+    // 7. we need to keep the loops whose counters are outer members
+    const toKeepForStatements = []
+    let currForLoop = node
+    while (currForLoop.type === 'ForStatement') {
+      if (this.innerBody.type !== 'BlockStatement') {
+        break
+      }
+      if (this.innerBody.body.length > 1 || this.innerBody.body.length === 0) {
+        break
+      }
 
-    create.mutateToExpressionStatement(node, createKernelSourceCall)
+      const counter = ((currForLoop.init as es.VariableDeclaration).declarations[0]
+        .id as es.Identifier).name
+      if (!toKeepMembers.includes(counter)) {
+        toKeepForStatements.push(node)
+      }
 
-    return this.state
+      currForLoop = this.innerBody.body[0]
+    }
+
+    // 8. we transpile the loop to a function call, __createKernelSource
+    const makeCreateKernelSourceCall = (arr: es.Identifier): es.CallExpression => {
+      const kernelFunction = create.blockArrowFunction([], this.targetBody)
+      return create.callExpression(
+        this.globalIds.__createKernelSource,
+        [
+          create.arrayExpression(this.counters.map(x => create.literal(x))),
+          create.arrayExpression(this.end),
+          create.arrayExpression(toParallelizeMembers.map(x => create.literal(x))),
+          create.arrayExpression(externEntries.map(create.arrayExpression)),
+          create.arrayExpression(Array.from(locals.values()).map(v => create.literal(v))),
+          arr,
+          kernelFunction,
+          create.literal(currentKernelId++)
+        ],
+        node.loc!
+      )
+    }
+
+    // 8. we construct our new node
+    if (toKeepMembers.length === 0) {
+      create.mutateToExpressionStatement(node, makeCreateKernelSourceCall(this.outputArray))
+      return this.ok
+    }
+
+    let mem: es.MemberExpression | es.Identifier = this.outputArray
+    for (let m of toKeepMembers) {
+      mem = create.memberExpression(mem, m)
+    }
+    const declar = create.constantDeclaration('arr', mem)
+    const createKernelSourceCall = makeCreateKernelSourceCall(create.identifier('arr'))
+    let body = create.blockStatement([declar, create.expressionStatement(createKernelSourceCall)])
+
+    for (let i = toKeepForStatements.length - 1; i >= 0; i--) {
+      const f = toKeepForStatements[i]
+      body = create.blockStatement([create.ForStatement(f.init, f.test, f.update, body)])
+    }
+
+    const f = toKeepForStatements[0]
+    create.mutateToForStatement(node, f.init, f.test, f.update, body)
+
+    return this.ok
   }
 
   // verification of outer loops using our verifier
