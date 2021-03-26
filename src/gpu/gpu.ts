@@ -41,6 +41,7 @@ export function transpileToGPU(program: es.Program) {
       if (arr[1] === 1) {
         debug = `Attempting to optimize the loop on line ${arr[0]}`
       }
+      console.log(debug)
       gpuDisplayStatements.push(
         create.expressionStatement(
           create.callExpression(create.identifier('display'), [create.literal(debug)], {
@@ -61,6 +62,6 @@ export function transpileToGPU(program: es.Program) {
     })
   )
 
-  console.log(program.body)
   program.body = [...gpuDisplayStatements, clearKernelCacheStatement, ...program.body]
+  console.log(JSON.stringify(program))
 }

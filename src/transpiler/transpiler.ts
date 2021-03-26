@@ -697,21 +697,33 @@ export function transpile(
 
   const functionsToStringMap = generateFunctionsToStringMap(program)
 
+  console.log('a')
   transformReturnStatementsToAllowProperTailCalls(program)
+  console.log('a')
   transformCallExpressionsToCheckIfFunction(program, globalIds)
+  console.log('a')
   transformUnaryAndBinaryOperationsToFunctionCalls(program, globalIds, context.chapter)
+  console.log('a')
   transformSomeExpressionsToCheckIfBoolean(program, globalIds)
+  console.log('a')
   transformPropertyAssignment(program, globalIds)
+  console.log('b')
   transformPropertyAccess(program, globalIds)
+  console.log('b')
   checkForUndefinedVariablesAndTransformAssignmentsToPropagateBackNewValue(
     program,
     skipUndefinedVariableErrors,
     context.nativeStorage,
     globalIds
   )
+  console.log('b')
   transformFunctionDeclarationsToArrowFunctions(program, functionsToStringMap)
+  console.log('b')
   wrapArrowFunctionsToAllowNormalCallsAndNiceToString(program, functionsToStringMap, globalIds)
+  console.log('b')
   addInfiniteLoopProtection(program, globalIds, usedIdentifiers)
+
+  console.log('After adding infinite loop protection')
 
   const modulePrefix = prefixModule(program)
   transformImportDeclarations(program)

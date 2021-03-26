@@ -180,6 +180,7 @@ class GPUTransformer {
     for (let i = 0; i < this.members.length - toParallelizeCount; i++) {
       toKeepMembers.push(this.members[i])
     }
+    console.log(toKeepMembers)
 
     // 7. we need to keep the loops whose counters are outer members
     const toKeepForStatements = []
@@ -194,7 +195,6 @@ class GPUTransformer {
 
       const counter = ((currForLoop.init as es.VariableDeclaration).declarations[0]
         .id as es.Identifier).name
-      console.log(counter)
       if (toKeepMembers.includes(counter)) {
         toKeepForStatements.push(node)
       } else {
@@ -203,6 +203,7 @@ class GPUTransformer {
 
       currForLoop = currForLoop.body.body[0] as any
     }
+    console.log(toKeepForStatements)
 
     // 8. we transpile the loop to a function call, __createKernelSource
     const makeCreateKernelSourceCall = (arr: es.Identifier): es.CallExpression => {
@@ -234,15 +235,30 @@ class GPUTransformer {
 
     let mem: es.MemberExpression | es.Identifier = this.outputArray
     for (let m of toKeepMembers) {
-      mem = create.memberExpression(mem, m)
+      mem = create.memberExpression(mem, m, true, {
+        start: { line: 1000, column: 1000 },
+        end: { line: 1000, column: 1000 }
+      })
     }
-    const declar = create.constantDeclaration('arr', mem)
-    const createKernelSourceCall = makeCreateKernelSourceCall(create.identifier('arr'))
-    let body = create.blockStatement([declar, create.expressionStatement(createKernelSourceCall)])
+    const declar = create.constantDeclaration('__arr', mem)
+    const createKernelSourceCall = makeCreateKernelSourceCall(create.identifier('__arr'))
+    let body = create.blockStatement([
+      declar,
+      create.expressionStatement(
+        create.callExpression(create.identifier('display'), [create.literal('elo')], {
+          start: { line: 700, column: 9 },
+          end: { line: 700, column: 12 }
+        })
+      ),
+      create.expressionStatement(createKernelSourceCall)
+    ])
+    console.log(body)
 
-    for (let i = toKeepForStatements.length - 1; i >= 0; i--) {
+    for (let i = toKeepForStatements.length - 1; i > 0; i--) {
       const f = toKeepForStatements[i]
       body = create.blockStatement([create.ForStatement(f.init, f.test, f.update, body)])
+      console.log('hi')
+      console.log(body)
     }
 
     const f = toKeepForStatements[0]

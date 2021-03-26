@@ -491,8 +491,10 @@ export async function runInContext(
           transpileToLazy(program)
           break
       }
+      console.log('Transpile to gpu done')
 
       const temp = transpile(program, context, false)
+      console.log('Normal transpilation done')
       // some issues with formatting and semicolons and tslint so no destructure
       transpiled = temp.transpiled
       sourceMapJson = temp.codeMap

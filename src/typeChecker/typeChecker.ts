@@ -214,6 +214,7 @@ export function typeCheck(
   program: TypeAnnotatedNode<es.Program>,
   context: Context
 ): [TypeAnnotatedNode<es.Program>, SourceError[]] {
+  console.log('Typechecking')
   typeIdCounter = 0
   typeErrors = []
   const env: Env = context.typeEnvironment
@@ -234,6 +235,7 @@ export function typeCheck(
     // they would have already been processed
   }
   traverse(program, constraints)
+  console.log(typeErrors)
   return [program, typeErrors]
 }
 
