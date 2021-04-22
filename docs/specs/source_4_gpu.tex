@@ -110,7 +110,6 @@ If it is a user-defined function, it must satisfy all of these constraints:
     \item{any function that is called within this function must also be a valid \textit{gpu\_function}}
 \end{itemize}
 
-
 \subsection*{Core Statement}
 
 Within \textit{core\_statement}, there are some constraints:
@@ -123,12 +122,12 @@ Within \textit{core\_statement}, there are some constraints:
 \subsection*{GPU Result Statement}
 
 The \textit{gpu\_result\_assignment} is the statement that stores a value calculated in core statements into a result array. 
-It access an array at a certain coordinate e.g. ${array[{i_1}][{i_2}][{i_3}]}$. For this: 
+It access an array at a certain coordinate e.g. ${array[{i_1}][{i_2}][{i_3}]}$. For this:
 
 \begin{itemize}
     \item{This result array has to be defined outside the \textit{gpu\_block}.}
-    \item{ If you have ${n}$ special for loops, the array expression can take on ${k}$ coordinates where ${0 < k \leq n}$.} 
-    \item{ The coordinate values can be either a number, an external variable or a counter only. }
+    \item{If you have ${n}$ special for loops, the array expression can take on ${k}$ coordinates where ${0 < k \leq n}$.} 
+    \item{The coordinate values can be either a number, an external variable or a counter only.}
 \end{itemize}
 
 \section*{Examples}
