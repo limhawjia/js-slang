@@ -6,6 +6,13 @@ Source §4 GPU is an extension which allows users to accelerate their Source pro
 
 We have identified unnecessary restrictions in the existing implementation and expanded the scope of user programs that can be parallelized. Our goal is to make it easier and less restrictive for a Source programmer to exploit parallel computation using the GPU.
 
+## Improvements made
+The improvements that we have made come in the form of reduced restrictions on what is deemed as parallelizable code. They are as follows:
+
+1. Remove restriction about strict ordering of indices in the array assignment step (that the indices used must be a prefix of the for-loop ordering)
+2. Remove restriction that only functions from the math library are usable in the loop body  (allow the use of a valid set of user-defined functions)
+3. Remove restriction that the for-loop counter must be initialised to 0 and can only be incremented by 1 each iteration.
+
 js-slang
 ====
 Open-source implementations of the programming language *Source*. Source
