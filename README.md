@@ -1,3 +1,13 @@
+Improving Source §4 GPU
+====
+This repository is a fork of https://github.com/source-academy/js-slang that aims to improve the implementation of Source §4 GPU.
+
+Source §4 GPU is an extension which allows users to accelerate their Source programs by utilizing their GPU for certain parallelizable operations.
+
+We have identified unnecessary restrictions in the existing implementation and expanded the scope of user programs that can be parallelized. Our goal is to make it easier and less restrictive for a Source programmer to exploit parallel computation using the GPU.
+
+js-slang
+====
 Open-source implementations of the programming language *Source*. Source
 is a series of small subsets of JavaScript, designed for teaching
 university-level programming courses for computer science majors,
